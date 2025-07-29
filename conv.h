@@ -5,7 +5,7 @@ struct conv2d {
     int H_in, H_out;
     int W_in, W_out;
     int k_h, k_w;
-    int B, stride, padding, dilation, groups;
+    int B, stride, padding, dilation;
 
     int8_t* weights;
     float* bias;
