@@ -35,6 +35,7 @@ __global__ void kernel(
                 if (h_in < 0 || h_in >= conv.H_in || w_in < 0 || w_in >= conv.W_in) {
                     continue; // skip out-of-bounds input
                 }
+                
                 int in_idx = ((batch * conv.C_in + c) * conv.H_in + h_in) * conv.W_in + w_in;
                 int weight_idx = ((c_out * conv.C_in + c) * conv.k_h + h) * conv.k_w + w;
 
