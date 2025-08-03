@@ -12,7 +12,7 @@
     }
 
 
-void launch_kernel(
+void launch_forward_kernel(
     const int8_t* in,
     int8_t* out,
     const conv2d& conv
@@ -52,7 +52,7 @@ void launch_kernel(
     int block_dim = 256; // Number of threads per block
     dim3 blockDim(block_dim);
     dim3 gridDim((conv.H_out * conv.W_out + block_dim - 1) / block_dim, conv.C_out, conv.batch_size); // equivalent to ceil(H_out * W_out / block_dim)
-    kernel<<<gridDim, blockDim, 0, curr_stream>>>(kernel_in, kernel_out, *kernel_conv);
+    forward_kernel<<<gridDim, blockDim, 0, curr_stream>>>(kernel_in, kernel_out, *kernel_conv);
 
     // Copy output
     ERROR_CHECK(cudaMemcpyAsync(out, kernel_out, out_size * sizeof(int8_t), cudaMemcpyDeviceToHost, curr_stream));
@@ -66,4 +66,52 @@ void launch_kernel(
 
     // Synchronize
     ERROR_CHECK(cudaStreamSynchronize(curr_stream));
+}
+
+void launch_backward_input_kernel(
+    torch::Tensor grad_in, 
+    const torch::Tensor grad_out, 
+    const torch::Tensor weights,
+    const conv2d& conv
+) {
+    float* kernel_grad_in = grad_in.data_ptr<float>();
+    const float* kernel_grad_out = grad_out.data_ptr<float>();
+    const int8_t* kernel_weights = weights.data_ptr<int8_t>();
+
+    // Get current CUDA stream
+    cudaStream_t curr_stream = at::cuda::getCurrentCUDAStream();
+
+    // Launch kernel
+    int block_x = 16;
+    int block_y = 16;
+    dim3 blockDim(block_x, block_y);
+    dim3 gridDim((conv.W_in + block_x - 1) / block_x, (conv.H_in + block_y - 1) / block_y, conv.C_in * conv.batch_size);
+    backward_input_kernel<<<gridDim, blockDim, 0, curr_stream>>>(kernel_grad_in, kernel_grad_out, kernel_weights, conv);
+
+    // Check for kernel error
+    ERROR_CHECK(cudaGetLastError());
+}
+
+void launch_backward_weights_kernel(
+    const torch::Tensor in,
+    const torch::Tensor grad_out,
+    torch::Tensor grad_weights, 
+    const conv2d& conv
+) {
+    const int8_t* kernel_in = in.data_ptr<int8_t>();
+    const float* kernel_grad_out = grad_out.data_ptr<float>();
+    float* kernel_grad_weights = grad_weights.data_ptr<float>();
+
+    // Get current CUDA stream
+    cudaStream_t curr_stream = at::cuda::getCurrentCUDAStream();
+
+    // Launch kernel
+    int block_x = 16;
+    int block_y = 16;
+    dim3 blockDim(block_x, block_y);
+    dim3 gridDim((conv.k_w + block_x - 1) / block_x, (conv.k_h + block_y - 1) / block_y, conv.C_out * conv.C_in);
+    backward_weights_kernel<<<gridDim, blockDim, 0, curr_stream>>>(kernel_in, kernel_grad_out, kernel_grad_weights, conv);
+
+    // Check for kernel error
+    ERROR_CHECK(cudaGetLastError());
 }

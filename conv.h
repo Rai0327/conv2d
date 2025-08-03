@@ -14,4 +14,8 @@ struct conv2d {
     int x_zp, w_zp, y_zp;
 };
 
-__global__ void kernel(const int8_t* __restrict__ in, int8_t* __restrict__ out, conv2d& conv);
+__global__ void forward_kernel(const int8_t* __restrict__ in, int8_t* __restrict__ out, conv2d& conv);
+
+__global__ void backward_input_kernel(float* __restrict__ grad_in, const float* __restrict__ grad_out, const int8_t* __restrict__ weights, conv2d& conv);
+
+__global__ void backward_weights_kernel(const int8_t* __restrict__ in, const float* __restrict__ grad_out, float* __restrict__ grad_weights, conv2d& conv);
