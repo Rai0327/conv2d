@@ -2,6 +2,7 @@
 #include "autograd.h"
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/types.h>
+#include <ATen/quantized/Quantizer.h>
 
 torch::Tensor conv2d_relu_int8_forward(
     const torch::Tensor in,
@@ -9,12 +10,13 @@ torch::Tensor conv2d_relu_int8_forward(
     const torch::Tensor bias,
     int stride,
     int padding,
-    int dilation
+    int dilation,
+    float x_scale, int x_zp,
+    float w_scale, int w_zp
 ) {
     TORCH_CHECK(in.is_cuda(), "Input must be CUDA");
     TORCH_CHECK(weights.is_cuda(), "Weights must be CUDA");
     TORCH_CHECK(bias.is_cuda(), "Bias must be CUDA");
-    TORCH_CHECK(in.dtype() == torch::kInt8, "Expected int8 input");
 
     int batch_size = in.size(0);
     int C_in = in.size(1);
@@ -26,7 +28,7 @@ torch::Tensor conv2d_relu_int8_forward(
     int H_out = (H_in + 2 * padding - dilation * (k_h - 1) - 1) / stride + 1;
     int W_out = (W_in + 2 * padding - dilation * (k_w - 1) - 1) / stride + 1;
 
-    torch::Tensor out = torch::empty({batch_size, C_out, H_out, W_out}, torch::dtype(torch::kChar).device(in.device()));
+    torch::Tensor out = torch::empty({batch_size, C_out, H_out, W_out}, torch::dtype(torch::kFloat32).device(in.device()));
 
     // Set up conv2d structure
     conv2d conv;
@@ -42,19 +44,37 @@ torch::Tensor conv2d_relu_int8_forward(
     conv.stride = stride;
     conv.padding = padding;
     conv.dilation = dilation;
+    conv.x_scale = x_scale;
+    conv.w_scale = w_scale;
+    conv.x_zp = x_zp;
+    conv.w_zp = w_zp;
 
-    conv.x_scale = 1.0f;
-    conv.w_scale = 1.0f;
-    conv.y_scale = 1.0f;
-    conv.x_zp = 0;
-    conv.w_zp = 0;
-    conv.y_zp = 0;
+    // // Quantize input and weights
+    // auto x_min = in.min().item<float>();
+    // auto x_max = in.max().item<float>();
+    // auto w_min = weights.min().item<float>();
+    // auto w_max = weights.max().item<float>();
+
+    // conv.x_scale = (x_max - x_min) / 255.0f;
+    // conv.x_zp = std::clamp((int) std::round(-x_min / conv.x_scale), -128, 127);
+    // conv.w_scale = (w_max - w_min) / 255.0f;
+    // conv.w_zp = std::clamp((int) std::round(-w_min / conv.w_scale), -128, 127);
+
+    // at::Tensor quant_in = at::quantize_per_tensor(in, conv.x_scale, conv.x_zp, at::kQInt8).int_repr();
+    // at::Tensor quant_weights = at::quantize_per_tensor(weights, conv.w_scale, conv.w_zp, at::kQInt8).int_repr();
 
     conv.weights = weights.data_ptr<int8_t>();
     conv.bias = bias.data_ptr<float>();
 
     // Launch kernel
-    launch_forward_kernel(in.data_ptr<int8_t>(), out.data_ptr<int8_t>(), conv);
+    launch_forward_kernel(in.data_ptr<int8_t>(), out.data_ptr<float>(), conv);
+
+    // Quantize output
+    // auto y_min = out.min().item<float>();
+    // auto y_max = out.max().item<float>();
+    // float y_scale = (y_max - y_min) / 255.0f;
+    // int y_zp = std::clamp((int) std::round(-y_min / y_scale), -128, 127);
+    // at::Tensor quant_out = at::quantize_per_tensor(out, y_scale, y_zp, at::kQInt8);
 
     return out;
 }
@@ -62,7 +82,8 @@ torch::Tensor conv2d_relu_int8_forward(
 torch::Tensor conv2d_relu_int8_input_backward(
     const torch::Tensor grad_out,
     const torch::Tensor weights,
-    int stride, int padding, int dilation
+    int stride, int padding, int dilation,
+    float w_scale, int w_zp
 ) {
     TORCH_CHECK(grad_out.is_cuda());
     TORCH_CHECK(weights.is_cuda());
@@ -93,13 +114,15 @@ torch::Tensor conv2d_relu_int8_input_backward(
     conv.stride = stride;
     conv.padding = padding;
     conv.dilation = dilation;
+    conv.w_scale = w_scale;
+    conv.w_zp = w_zp;
 
-    conv.x_scale = 1.0f;
-    conv.w_scale = 1.0f;
-    conv.y_scale = 1.0f;
-    conv.x_zp = 0;
-    conv.w_zp = 0;
-    conv.y_zp = 0;
+    // conv.x_scale = 1.0f;
+    // conv.w_scale = 1.0f;
+    // conv.y_scale = 1.0f;
+    // conv.x_zp = 0;
+    // conv.w_zp = 0;
+    // conv.y_zp = 0;
 
     // Launch kernel
     launch_backward_input_kernel(grad_in, grad_out, weights, conv);
@@ -111,7 +134,8 @@ torch::Tensor conv2d_relu_int8_weights_backward(
     const torch::Tensor in,
     const torch::Tensor grad_out,
     int stride, int padding, int dilation,
-    int k_h, int k_w
+    int k_h, int k_w,
+    float x_scale, int x_zp
 ) {
     TORCH_CHECK(in.is_cuda());
     TORCH_CHECK(grad_out.is_cuda());
@@ -140,23 +164,18 @@ torch::Tensor conv2d_relu_int8_weights_backward(
     conv.stride = stride;
     conv.padding = padding;
     conv.dilation = dilation;
+    conv.x_scale = x_scale;
+    conv.x_zp = x_zp;
 
-    conv.x_scale = 1.0f;
-    conv.w_scale = 1.0f;
-    conv.y_scale = 1.0f;
-    conv.x_zp = 0;
-    conv.w_zp = 0;
-    conv.y_zp = 0;
+    // conv.x_scale = 1.0f;
+    // conv.w_scale = 1.0f;
+    // conv.y_scale = 1.0f;
+    // conv.x_zp = 0;
+    // conv.w_zp = 0;
+    // conv.y_zp = 0;
 
     // Launch kernel
     launch_backward_weights_kernel(in, grad_out, grad_weights, conv);
 
     return grad_weights;
-}
-
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.doc() = "CUDA Conv2D with ReLU activation for int8 inputs";
-    m.def("conv2d_relu_int8_forward", &conv2d_relu_int8_forward);
-    m.def("conv2d_relu_int8_input_backward", &conv2d_relu_int8_input_backward);
-    m.def("conv2d_relu_int8_weights_backward", &conv2d_relu_int8_weights_backward);
 }

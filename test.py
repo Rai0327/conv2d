@@ -1,7 +1,6 @@
 import torch
-
-# Assuming your extension is built and imported as conv2d_relu_int8
-from conv import QuantizedConv2dReLU
+import copy
+from conv import QuantizedConv2dReLU, TorchConv2dReLU
 print("Successfully imported QuantizedConv2dReLU")
 
 # Define test parameters
@@ -24,19 +23,41 @@ conv = QuantizedConv2dReLU(
     dilation=dilation
 ).cuda()
 
+torch_conv = TorchConv2dReLU(
+    in_channels=in_channels,
+    out_channels=out_channels,
+    kernel_size=kernel_size,
+    stride=stride,
+    padding=padding,
+    dilation=dilation
+).cuda()
+
+with torch.no_grad():
+    conv.weight.copy_(torch_conv.conv.weight)
+    conv.bias.copy_(torch_conv.conv.bias)
+
 # Generate dummy input
 x = torch.randn(batch_size, in_channels, height, width, device='cuda', dtype=torch.float32, requires_grad=True)
+x_torch = copy.deepcopy(x)
 
 # Forward pass
 y = conv(x)
-print("Output shape:", y.shape)  # Should be [batch_size, out_channels, height, width] with same shape due to padding
+y_torch = torch_conv(x_torch)
+
+print("Max abs diff:", (y_torch - y.float()).abs().max().item())
+print("Mean abs diff:", (y_torch - y.float()).abs().mean().item())
+
+assert(y.shape == y_torch.shape)  # Should be [batch_size, out_channels, height, width] with same shape due to padding
 
 # Backward pass check
 loss = y.sum()
 loss.backward()
+torch_loss = y_torch.sum()
+torch_loss.backward()
 
 # Check gradients
-print("Gradients on input:", x.grad.shape)
-print("Gradients on weight:", conv.weight.grad.shape)
-if conv.bias is not None:
-    print("Gradients on bias:", conv.bias.grad.shape)
+assert(x.grad.shape == x_torch.grad.shape)  # Input gradients should match
+assert(conv.weight.grad.shape == torch_conv.conv.weight.grad.shape)  # Weight gradients should match
+assert(conv.bias.grad.shape == torch_conv.conv.bias.grad.shape)  # Bias gradients should match
+
+print("Test passed successfully!")

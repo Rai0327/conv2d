@@ -1,4 +1,7 @@
+#pragma once
+
 #include <stdint.h>
+#include <torch/types.h>
 
 struct conv2d {
     int C_in, C_out;
@@ -10,12 +13,26 @@ struct conv2d {
     int8_t* weights;
     float* bias;
 
-    float x_scale, w_scale, y_scale;
-    int x_zp, w_zp, y_zp;
+    float x_scale, w_scale;
+    int x_zp, w_zp;
 };
 
-__global__ void forward_kernel(const int8_t* __restrict__ in, int8_t* __restrict__ out, conv2d& conv);
+void launch_forward_kernel(
+    const int8_t* in,
+    float* out,
+    const conv2d& conv
+);
 
-__global__ void backward_input_kernel(float* __restrict__ grad_in, const float* __restrict__ grad_out, const int8_t* __restrict__ weights, conv2d& conv);
+void launch_backward_input_kernel(
+    torch::Tensor grad_in, 
+    const torch::Tensor grad_out, 
+    const torch::Tensor weights,
+    const conv2d& conv
+);
 
-__global__ void backward_weights_kernel(const int8_t* __restrict__ in, const float* __restrict__ grad_out, float* __restrict__ grad_weights, conv2d& conv);
+void launch_backward_weights_kernel(
+    const torch::Tensor in,
+    const torch::Tensor grad_out,
+    torch::Tensor grad_weights, 
+    const conv2d& conv
+);

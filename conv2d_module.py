@@ -8,6 +8,7 @@ setup(
             name='conv2d_relu_int8',
             sources=[
                 'bindings.cpp',
+                'autograd.cpp',
                 'conv.cu',
             ],
             extra_compile_args={
