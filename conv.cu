@@ -64,7 +64,7 @@ __global__ void backward_input_kernel(
     float* __restrict__ grad_in, 
     const float* __restrict__ grad_out, 
     const int8_t* __restrict__ weights, 
-    const conv2d& conv
+    const conv2d conv
 ) {
     int w_in = blockIdx.x * blockDim.x + threadIdx.x;
     int h_in = blockIdx.y * blockDim.y + threadIdx.y;
@@ -110,7 +110,7 @@ __global__ void backward_weights_kernel(
     const int8_t* __restrict__ in, 
     const float* __restrict__ grad_out, 
     float* __restrict__ grad_weights, 
-    const conv2d& conv
+    const conv2d conv
 ) {
     int w = threadIdx.x + blockIdx.x * blockDim.x;
     int h = threadIdx.y + blockIdx.y * blockDim.y;

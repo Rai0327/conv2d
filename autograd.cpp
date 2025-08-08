@@ -49,32 +49,11 @@ torch::Tensor conv2d_relu_int8_forward(
     conv.x_zp = x_zp;
     conv.w_zp = w_zp;
 
-    // // Quantize input and weights
-    // auto x_min = in.min().item<float>();
-    // auto x_max = in.max().item<float>();
-    // auto w_min = weights.min().item<float>();
-    // auto w_max = weights.max().item<float>();
-
-    // conv.x_scale = (x_max - x_min) / 255.0f;
-    // conv.x_zp = std::clamp((int) std::round(-x_min / conv.x_scale), -128, 127);
-    // conv.w_scale = (w_max - w_min) / 255.0f;
-    // conv.w_zp = std::clamp((int) std::round(-w_min / conv.w_scale), -128, 127);
-
-    // at::Tensor quant_in = at::quantize_per_tensor(in, conv.x_scale, conv.x_zp, at::kQInt8).int_repr();
-    // at::Tensor quant_weights = at::quantize_per_tensor(weights, conv.w_scale, conv.w_zp, at::kQInt8).int_repr();
-
     conv.weights = weights.data_ptr<int8_t>();
     conv.bias = bias.data_ptr<float>();
 
     // Launch kernel
     launch_forward_kernel(in.data_ptr<int8_t>(), out.data_ptr<float>(), conv);
-
-    // Quantize output
-    // auto y_min = out.min().item<float>();
-    // auto y_max = out.max().item<float>();
-    // float y_scale = (y_max - y_min) / 255.0f;
-    // int y_zp = std::clamp((int) std::round(-y_min / y_scale), -128, 127);
-    // at::Tensor quant_out = at::quantize_per_tensor(out, y_scale, y_zp, at::kQInt8);
 
     return out;
 }
@@ -116,13 +95,6 @@ torch::Tensor conv2d_relu_int8_input_backward(
     conv.dilation = dilation;
     conv.w_scale = w_scale;
     conv.w_zp = w_zp;
-
-    // conv.x_scale = 1.0f;
-    // conv.w_scale = 1.0f;
-    // conv.y_scale = 1.0f;
-    // conv.x_zp = 0;
-    // conv.w_zp = 0;
-    // conv.y_zp = 0;
 
     // Launch kernel
     launch_backward_input_kernel(grad_in, grad_out, weights, conv);
@@ -166,13 +138,6 @@ torch::Tensor conv2d_relu_int8_weights_backward(
     conv.dilation = dilation;
     conv.x_scale = x_scale;
     conv.x_zp = x_zp;
-
-    // conv.x_scale = 1.0f;
-    // conv.w_scale = 1.0f;
-    // conv.y_scale = 1.0f;
-    // conv.x_zp = 0;
-    // conv.w_zp = 0;
-    // conv.y_zp = 0;
 
     // Launch kernel
     launch_backward_weights_kernel(in, grad_out, grad_weights, conv);
