@@ -14,5 +14,5 @@ torch::Tensor conv2d_relu_int8_autograd(
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.doc() = "CUDA Conv2D ReLU int8 autograd function";
-    m.def("conv2d_relu_int8", &conv2d_relu_int8_autograd, "int8 conv2d with autograd");
+    m.def("conv2d_relu_int8", &conv2d_relu_int8_autograd);
 }

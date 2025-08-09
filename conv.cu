@@ -50,12 +50,12 @@ __global__ void forward_kernel(
                 int in_idx = ((batch * conv.C_in + c) * conv.H_in + h_in) * conv.W_in + w_in;
                 int weight_idx = ((c_out * conv.C_in + c) * conv.k_h + h) * conv.k_w + w;
 
-                acc += (((int32_t) in[in_idx]) - conv.x_zp) * ((int32_t) conv.weights[weight_idx] - conv.w_zp);
+                acc += (((int) in[in_idx]) - conv.x_zp) * ((int) conv.weights[weight_idx] - conv.w_zp);
             }
         }
     }
 
-    float out_acc = acc * conv.x_scale * conv.w_scale + conv.bias[c_out];
+    float out_acc = acc * conv.x_scale * conv.w_scale + (conv.bias ? conv.bias[c_out] : 0.0f);
     int out_idx = ((batch * conv.C_out + c_out) * conv.H_out + h_out) * conv.W_out + w_out;
     out[out_idx] = relu(out_acc);
 }
@@ -166,7 +166,9 @@ void launch_forward_kernel(
     ERROR_CHECK(cudaMalloc(&kernel_in, in_size * sizeof(int8_t)));
     ERROR_CHECK(cudaMalloc(&kernel_out, out_size * sizeof(float)));
     ERROR_CHECK(cudaMalloc(&kernel_weights, weights_size * sizeof(int8_t)));
-    ERROR_CHECK(cudaMalloc(&kernel_bias, bias_size * sizeof(float)));
+    if (conv.bias) {
+        ERROR_CHECK(cudaMalloc(&kernel_bias, bias_size * sizeof(float)));
+    }
     ERROR_CHECK(cudaMalloc(&kernel_conv, sizeof(conv2d)));
 
     // Get current CUDA stream
@@ -175,7 +177,11 @@ void launch_forward_kernel(
     // Copy input, weights, and bias to GPU
     ERROR_CHECK(cudaMemcpyAsync(kernel_in, in, in_size * sizeof(int8_t), cudaMemcpyHostToDevice, curr_stream));
     ERROR_CHECK(cudaMemcpyAsync(kernel_weights, conv.weights, weights_size * sizeof(int8_t), cudaMemcpyHostToDevice, curr_stream));
-    ERROR_CHECK(cudaMemcpyAsync(kernel_bias, conv.bias, bias_size * sizeof(float), cudaMemcpyHostToDevice, curr_stream));
+    if (conv.bias) {
+        ERROR_CHECK(cudaMemcpyAsync(kernel_bias, conv.bias, bias_size * sizeof(float), cudaMemcpyHostToDevice, curr_stream));
+    } else {
+        kernel_bias = nullptr;
+    }
 
     // Copy conv to GPU
     conv2d conv_copy = conv;
@@ -196,7 +202,9 @@ void launch_forward_kernel(
     ERROR_CHECK(cudaFree(kernel_in));
     ERROR_CHECK(cudaFree(kernel_out));
     ERROR_CHECK(cudaFree(kernel_weights));
-    ERROR_CHECK(cudaFree(kernel_bias));
+    if (conv.bias) {
+        ERROR_CHECK(cudaFree(kernel_bias));
+    }
     ERROR_CHECK(cudaFree(kernel_conv));
 
     // Synchronize

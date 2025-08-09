@@ -16,7 +16,9 @@ torch::Tensor conv2d_relu_int8_forward(
 ) {
     TORCH_CHECK(in.is_cuda(), "Input must be CUDA");
     TORCH_CHECK(weights.is_cuda(), "Weights must be CUDA");
-    TORCH_CHECK(bias.is_cuda(), "Bias must be CUDA");
+    if (bias.numel()) {
+        TORCH_CHECK(bias.is_cuda(), "Bias must be CUDA");
+    }
 
     int batch_size = in.size(0);
     int C_in = in.size(1);
@@ -50,7 +52,11 @@ torch::Tensor conv2d_relu_int8_forward(
     conv.w_zp = w_zp;
 
     conv.weights = weights.data_ptr<int8_t>();
-    conv.bias = bias.data_ptr<float>();
+    if (bias.numel()) {
+        conv.bias = bias.data_ptr<float>();
+    } else {
+        conv.bias = nullptr;
+    }
 
     // Launch kernel
     launch_forward_kernel(in.data_ptr<int8_t>(), out.data_ptr<float>(), conv);

@@ -35,7 +35,7 @@ class QuantizedConv2dReLU(nn.Module):
         self.padding = padding
         self.dilation = dilation
         self.weight = nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
-        self.bias = nn.Parameter(torch.zeros(out_channels)) if bias else None
+        self.bias = nn.Parameter(torch.zeros(out_channels if bias else 0))
 
     def forward(self, x):
         return conv2d.conv2d_relu_int8(x, self.weight, self.bias, self.stride, self.padding, self.dilation)
