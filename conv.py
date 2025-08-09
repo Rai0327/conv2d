@@ -18,7 +18,6 @@ conv2d = load(
         "-O3", "--use_fast_math",
         "-gencode=arch=compute_61,code=sm_61", # Adjust based on your GPU architecture
     ],
-    verbose=False
 )
 
 import torch
