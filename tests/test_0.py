@@ -3,14 +3,14 @@ from conv import QuantizedConv2dReLU, TorchConv2dReLU
 print("Successfully imported QuantizedConv2dReLU")
 
 # Define test parameters
-batch_size = 2
-in_channels = 3
-out_channels = 4
-height, width = 8, 8
-kernel_size = 3
-stride = 1
-padding = 1
-dilation = 1
+batch_size = 5
+in_channels = 56
+out_channels = 37
+height, width = 300, 200
+kernel_size = 13
+stride = 6
+padding = 20
+dilation = 5
 bias = True
 
 # Instantiate the layer

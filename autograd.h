@@ -18,7 +18,8 @@ torch::Tensor conv2d_relu_int8_input_backward(
     const torch::Tensor grad_out,
     const torch::Tensor weights,
     int stride, int padding, int dilation,
-    float w_scale, int w_zp
+    float w_scale, int w_zp,
+    int H_in, int W_in
 );
 
 torch::Tensor conv2d_relu_int8_weights_backward(
@@ -70,7 +71,7 @@ class Conv2dReLUInt8Function : public torch::autograd::Function<Conv2dReLUInt8Fu
     ) {
         auto grad_out = grad_outs[0];
         auto saved = ctx->get_saved_variables();
-        torch::Tensor grad_in = conv2d_relu_int8_input_backward(grad_out, saved[1], ctx->saved_data["stride"].toInt(), ctx->saved_data["padding"].toInt(), ctx->saved_data["dilation"].toInt(), ctx->saved_data["w_scale"].toDouble(), ctx->saved_data["w_zp"].toInt());
+        torch::Tensor grad_in = conv2d_relu_int8_input_backward(grad_out, saved[1], ctx->saved_data["stride"].toInt(), ctx->saved_data["padding"].toInt(), ctx->saved_data["dilation"].toInt(), ctx->saved_data["w_scale"].toDouble(), ctx->saved_data["w_zp"].toInt(), saved[0].size(2), saved[0].size(3));
         torch::Tensor grad_weights = conv2d_relu_int8_weights_backward(saved[0], grad_out, ctx->saved_data["stride"].toInt(), ctx->saved_data["padding"].toInt(), ctx->saved_data["dilation"].toInt(), saved[1].size(2), saved[1].size(3), ctx->saved_data["x_scale"].toDouble(), ctx->saved_data["x_zp"].toInt());
         torch::Tensor grad_bias;
         if (ctx->saved_data["has_bias"].toBool()) {

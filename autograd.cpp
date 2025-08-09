@@ -68,7 +68,8 @@ torch::Tensor conv2d_relu_int8_input_backward(
     const torch::Tensor grad_out,
     const torch::Tensor weights,
     int stride, int padding, int dilation,
-    float w_scale, int w_zp
+    float w_scale, int w_zp,
+    int H_in, int W_in
 ) {
     TORCH_CHECK(grad_out.is_cuda());
     TORCH_CHECK(weights.is_cuda());
@@ -80,8 +81,6 @@ torch::Tensor conv2d_relu_int8_input_backward(
     int C_in = weights.size(1);
     int k_h = weights.size(2);
     int k_w = weights.size(3);
-    int H_in = (H_out - 1) * stride - 2 * padding + dilation * (k_h - 1) + 1;
-    int W_in = (W_out - 1) * stride - 2 * padding + dilation * (k_w - 1) + 1;
 
     torch::Tensor grad_in = torch::empty({batch_size, C_in, H_in, W_in}, torch::dtype(torch::kFloat32).device(grad_out.device()));
 
