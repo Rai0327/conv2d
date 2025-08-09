@@ -57,7 +57,7 @@ __global__ void forward_kernel(
 
     float out_acc = acc * conv.x_scale * conv.w_scale + (conv.bias ? conv.bias[c_out] : 0.0f);
     int out_idx = ((batch * conv.C_out + c_out) * conv.H_out + h_out) * conv.W_out + w_out;
-    out[out_idx] = relu(out_acc);
+    out[out_idx] = conv.use_relu ? relu(out_acc) : out_acc;
 }
 
 __global__ void backward_input_kernel(

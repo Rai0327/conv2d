@@ -11,7 +11,8 @@ torch::Tensor conv2d_relu_int8_forward(
     int padding,
     int dilation,
     float x_scale, int x_zp,
-    float w_scale, int w_zp
+    float w_scale, int w_zp,
+    bool use_relu
 );
 
 torch::Tensor conv2d_relu_int8_input_backward(
@@ -37,7 +38,8 @@ class Conv2dReLUInt8Function : public torch::autograd::Function<Conv2dReLUInt8Fu
         const torch::Tensor& in,
         const torch::Tensor& weights,
         const torch::Tensor& bias,
-        int stride, int padding, int dilation
+        int stride, int padding, int dilation,
+        bool use_relu
     ) {
         // Quantize input and weights
         auto x_max = in.abs().max().item<float>();
@@ -62,7 +64,7 @@ class Conv2dReLUInt8Function : public torch::autograd::Function<Conv2dReLUInt8Fu
         ctx->saved_data["w_zp"] = w_zp;
         ctx->saved_data["has_bias"] = bias.numel() != 0;
 
-        return conv2d_relu_int8_forward(quant_in, quant_weights, bias, stride, padding, dilation, x_scale, x_zp, w_scale, w_zp);
+        return conv2d_relu_int8_forward(quant_in, quant_weights, bias, stride, padding, dilation, x_scale, x_zp, w_scale, w_zp, use_relu);
     }
 
     static torch::autograd::variable_list backward(
@@ -85,7 +87,8 @@ class Conv2dReLUInt8Function : public torch::autograd::Function<Conv2dReLUInt8Fu
             grad_bias,
             torch::Tensor(), // stride
             torch::Tensor(), // padding
-            torch::Tensor()  // dilation
+            torch::Tensor(), // dilation
+            torch::Tensor()  // use_relu
         };
     }
 };

@@ -12,7 +12,8 @@ torch::Tensor conv2d_relu_int8_forward(
     int padding,
     int dilation,
     float x_scale, int x_zp,
-    float w_scale, int w_zp
+    float w_scale, int w_zp,
+    bool use_relu
 ) {
     TORCH_CHECK(in.is_cuda(), "Input must be CUDA");
     TORCH_CHECK(weights.is_cuda(), "Weights must be CUDA");
@@ -50,6 +51,7 @@ torch::Tensor conv2d_relu_int8_forward(
     conv.w_scale = w_scale;
     conv.x_zp = x_zp;
     conv.w_zp = w_zp;
+    conv.use_relu = use_relu;
 
     conv.weights = weights.data_ptr<int8_t>();
     if (bias.numel()) {

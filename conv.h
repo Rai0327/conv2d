@@ -15,6 +15,8 @@ struct conv2d {
 
     float x_scale, w_scale;
     int x_zp, w_zp;
+
+    bool use_relu;
 };
 
 void launch_forward_kernel(

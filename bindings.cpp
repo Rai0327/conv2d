@@ -7,9 +7,10 @@ torch::Tensor conv2d_relu_int8_autograd(
     const torch::Tensor& bias,
     int stride,
     int padding,
-    int dilation
+    int dilation,
+    bool use_relu
 ) {
-    return Conv2dReLUInt8Function::apply(in, weights, bias, stride, padding, dilation);
+    return Conv2dReLUInt8Function::apply(in, weights, bias, stride, padding, dilation, use_relu);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
