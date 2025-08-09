@@ -55,7 +55,7 @@ diff = torch_y - quant_y
 print("Max abs diff:", diff.abs().max().item())
 print("Mean abs diff:", diff.abs().mean().item())
 print("Median abs diff:", diff.abs().median().item())
-assert(diff.abs().mean().item() < 0.1 and diff.abs().median().item() < 0.1) # Acceptable difference threshold
+assert(diff.abs().mean().item() < 0.01 and diff.abs().median().item() < 0.01) # Acceptable difference threshold
 
 assert(quant_y.shape == torch_y.shape)  # Should be [batch_size, out_channels, height, width]
 
