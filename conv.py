@@ -1,27 +1,6 @@
-import os
-# Adjust environment variables for compilation
-os.environ["CC"] = "/usr/bin/gcc-10"
-os.environ["CXX"] = "/usr/bin/g++-10"
-os.environ['CUDA_HOME'] = '/usr/local/cuda-11.8'
-
-# import conv2d
-from torch.utils.cpp_extension import load
-conv2d = load(
-    name="conv2d_relu_int8",
-    sources=[
-        "bindings.cpp",
-        "autograd.cpp",
-        "conv.cu",
-    ],
-    extra_cflags=["-O3"],
-    extra_cuda_cflags=[
-        "-O3", "--use_fast_math",
-        "-gencode=arch=compute_61,code=sm_61", # Adjust based on your GPU architecture
-    ],
-)
-
 import torch
 import torch.nn as nn
+import conv2d
     
 class QuantizedConv2dReLU(nn.Module):
     """Quantized Conv2d with ReLU activation"""
