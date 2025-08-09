@@ -2,3 +2,6 @@ quant-conv/
 .vscode/
 __pycache__/
 *.pyc
+build/
+dist/
+*.egg-info/
