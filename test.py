@@ -1,5 +1,4 @@
 import torch
-import copy
 from conv import QuantizedConv2dReLU, TorchConv2dReLU
 print("Successfully imported QuantizedConv2dReLU")
 
@@ -12,15 +11,17 @@ kernel_size = 3
 stride = 1
 padding = 1
 dilation = 1
+bias = True
 
 # Instantiate the layer
-conv = QuantizedConv2dReLU(
+quant_conv = QuantizedConv2dReLU(
     in_channels=in_channels,
     out_channels=out_channels,
     kernel_size=kernel_size,
     stride=stride,
     padding=padding,
-    dilation=dilation
+    dilation=dilation,
+    bias=bias
 ).cuda()
 
 torch_conv = TorchConv2dReLU(
@@ -29,35 +30,45 @@ torch_conv = TorchConv2dReLU(
     kernel_size=kernel_size,
     stride=stride,
     padding=padding,
-    dilation=dilation
+    dilation=dilation,
+    bias=bias
 ).cuda()
 
 with torch.no_grad():
-    conv.weight.copy_(torch_conv.conv.weight)
-    conv.bias.copy_(torch_conv.conv.bias)
+    quant_conv.weight.copy_(torch_conv.conv.weight)
+    if bias:
+        quant_conv.bias.copy_(torch_conv.conv.bias)
 
 # Generate dummy input
-x = torch.randn(batch_size, in_channels, height, width, device='cuda', dtype=torch.float32, requires_grad=True)
-x_torch = copy.deepcopy(x)
+quant_x = torch.randn(batch_size, in_channels, height, width, device='cuda', dtype=torch.float32, requires_grad=True)
+torch_x = quant_x.detach().clone().requires_grad_(True)
+
+# Zero grads
+quant_conv.zero_grad(set_to_none=True)
+torch_conv.zero_grad(set_to_none=True)
 
 # Forward pass
-y = conv(x)
-y_torch = torch_conv(x_torch)
+quant_y = quant_conv(quant_x)
+torch_y = torch_conv(torch_x)
 
-print("Max abs diff:", (y_torch - y.float()).abs().max().item())
-print("Mean abs diff:", (y_torch - y.float()).abs().mean().item())
+diff = torch_y - quant_y
+print("Max abs diff:", diff.abs().max().item())
+print("Mean abs diff:", diff.abs().mean().item())
+print("Median abs diff:", diff.abs().median().item())
+assert(diff.abs().mean().item() < 0.1 and diff.abs().median().item() < 0.1) # Acceptable difference threshold
 
-assert(y.shape == y_torch.shape)  # Should be [batch_size, out_channels, height, width] with same shape due to padding
+assert(quant_y.shape == torch_y.shape)  # Should be [batch_size, out_channels, height, width]
 
 # Backward pass check
-loss = y.sum()
-loss.backward()
-torch_loss = y_torch.sum()
+quant_loss = quant_y.sum()
+quant_loss.backward()
+torch_loss = torch_y.sum()
 torch_loss.backward()
 
 # Check gradients
-assert(x.grad.shape == x_torch.grad.shape)  # Input gradients should match
-assert(conv.weight.grad.shape == torch_conv.conv.weight.grad.shape)  # Weight gradients should match
-assert(conv.bias.grad.shape == torch_conv.conv.bias.grad.shape)  # Bias gradients should match
+assert(quant_x.grad.shape == torch_x.grad.shape)  # Input gradients should match
+assert(quant_conv.weight.grad.shape == torch_conv.conv.weight.grad.shape)  # Weight gradients should match
+if bias:
+    assert(quant_conv.bias.grad.shape == torch_conv.conv.bias.grad.shape)  # Bias gradients should match
 
 print("Test passed successfully!")
