@@ -50,12 +50,12 @@ __global__ void forward_kernel(
                 int in_idx = ((batch * conv.C_in + c) * conv.H_in + h_in) * conv.W_in + w_in;
                 int weight_idx = ((c_out * conv.C_in + c) * conv.k_h + h) * conv.k_w + w;
 
-                acc += (((int) in[in_idx]) - conv.x_zp) * ((int) conv.weights[weight_idx] - conv.w_zp);
+                acc += (((int) in[in_idx]) - conv.x_zp) * ((int) conv.weights[weight_idx] - conv.w_zp[c_out]);
             }
         }
     }
 
-    float out_acc = acc * conv.x_scale * conv.w_scale + (conv.bias ? conv.bias[c_out] : 0.0f);
+    float out_acc = acc * conv.x_scale * conv.w_scale[c_out] + (conv.bias ? conv.bias[c_out] : 0.0f);
     int out_idx = ((batch * conv.C_out + c_out) * conv.H_out + h_out) * conv.W_out + w_out;
     out[out_idx] = conv.use_relu ? relu(out_acc) : out_acc;
 }
@@ -97,7 +97,7 @@ __global__ void backward_input_kernel(
                 int out_idx = ((batch * conv.C_out + c) * conv.H_out + h_out) * conv.W_out + w_out;
                 int weight_idx = ((c * conv.C_in + c_in) * conv.k_h + h) * conv.k_w + w;
 
-                acc += grad_out[out_idx] * (float) (weights[weight_idx] - conv.w_zp) * conv.w_scale;
+                acc += grad_out[out_idx] * (float) (weights[weight_idx] - conv.w_zp[c]) * conv.w_scale[c];
             }
         }
     }
@@ -157,10 +157,13 @@ void launch_forward_kernel(
     int out_size = conv.C_out * conv.H_out * conv.W_out * conv.batch_size;
     int weights_size = conv.C_out * conv.C_in * conv.k_h * conv.k_w;
     int bias_size = conv.C_out;
+    int w_scale_size = conv.C_out;
+    int w_zp_size = conv.C_out;
 
     // GPU memory allocation
     int8_t* kernel_in, *kernel_weights;
-    float* kernel_out, *kernel_bias;
+    float* kernel_out, *kernel_bias, *kernel_w_scale;
+    int* kernel_w_zp;
     conv2d* kernel_conv;
 
     ERROR_CHECK(cudaMalloc(&kernel_in, in_size * sizeof(int8_t)));
@@ -169,6 +172,8 @@ void launch_forward_kernel(
     if (conv.bias) {
         ERROR_CHECK(cudaMalloc(&kernel_bias, bias_size * sizeof(float)));
     }
+    ERROR_CHECK(cudaMalloc(&kernel_w_scale, w_scale_size * sizeof(float)));
+    ERROR_CHECK(cudaMalloc(&kernel_w_zp, w_zp_size * sizeof(int)));
     ERROR_CHECK(cudaMalloc(&kernel_conv, sizeof(conv2d)));
 
     // Get current CUDA stream
@@ -182,11 +187,15 @@ void launch_forward_kernel(
     } else {
         kernel_bias = nullptr;
     }
+    ERROR_CHECK(cudaMemcpyAsync(kernel_w_scale, conv.w_scale, w_scale_size * sizeof(float), cudaMemcpyHostToDevice, curr_stream));
+    ERROR_CHECK(cudaMemcpyAsync(kernel_w_zp, conv.w_zp, w_zp_size * sizeof(int), cudaMemcpyHostToDevice, curr_stream));
 
     // Copy conv to GPU
     conv2d conv_copy = conv;
     conv_copy.weights = kernel_weights;
     conv_copy.bias = kernel_bias;
+    conv_copy.w_scale = kernel_w_scale;
+    conv_copy.w_zp = kernel_w_zp;
     ERROR_CHECK(cudaMemcpyAsync(kernel_conv, &conv_copy, sizeof(conv2d), cudaMemcpyHostToDevice, curr_stream));
 
     // Launch kernel
@@ -205,6 +214,8 @@ void launch_forward_kernel(
     if (conv.bias) {
         ERROR_CHECK(cudaFree(kernel_bias));
     }
+    ERROR_CHECK(cudaFree(kernel_w_scale));
+    ERROR_CHECK(cudaFree(kernel_w_zp));
     ERROR_CHECK(cudaFree(kernel_conv));
 
     // Synchronize

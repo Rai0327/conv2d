@@ -13,8 +13,10 @@ struct conv2d {
     int8_t* weights;
     float* bias;
 
-    float x_scale, w_scale;
-    int x_zp, w_zp;
+    float x_scale;
+    int x_zp;
+    float* w_scale;
+    int* w_zp;
 
     bool use_relu;
 };

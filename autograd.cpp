@@ -12,7 +12,7 @@ torch::Tensor conv2d_relu_int8_forward(
     int padding,
     int dilation,
     float x_scale, int x_zp,
-    float w_scale, int w_zp,
+    torch::Tensor w_scale, torch::Tensor w_zp,
     bool use_relu
 ) {
     TORCH_CHECK(in.is_cuda(), "Input must be CUDA");
@@ -48,9 +48,9 @@ torch::Tensor conv2d_relu_int8_forward(
     conv.padding = padding;
     conv.dilation = dilation;
     conv.x_scale = x_scale;
-    conv.w_scale = w_scale;
+    conv.w_scale = w_scale.data_ptr<float>();
     conv.x_zp = x_zp;
-    conv.w_zp = w_zp;
+    conv.w_zp = w_zp.data_ptr<int>();
     conv.use_relu = use_relu;
 
     conv.weights = weights.data_ptr<int8_t>();
@@ -70,7 +70,7 @@ torch::Tensor conv2d_relu_int8_input_backward(
     const torch::Tensor grad_out,
     const torch::Tensor weights,
     int stride, int padding, int dilation,
-    float w_scale, int w_zp,
+    torch::Tensor w_scale, torch::Tensor w_zp,
     int H_in, int W_in
 ) {
     TORCH_CHECK(grad_out.is_cuda());
@@ -100,8 +100,8 @@ torch::Tensor conv2d_relu_int8_input_backward(
     conv.stride = stride;
     conv.padding = padding;
     conv.dilation = dilation;
-    conv.w_scale = w_scale;
-    conv.w_zp = w_zp;
+    conv.w_scale = w_scale.data_ptr<float>();
+    conv.w_zp = w_zp.data_ptr<int>();
 
     // Launch kernel
     launch_backward_input_kernel(grad_in, grad_out, weights, conv);
