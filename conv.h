@@ -10,13 +10,13 @@ struct conv2d {
     int k_h, k_w;
     int batch_size, stride, padding, dilation;
 
-    int8_t* weights;
-    float* bias;
+    const int8_t* weights;
+    const float* bias;
 
     float x_scale;
     int x_zp;
-    float* w_scale;
-    int* w_zp;
+    const float* w_scale;
+    const int* w_zp;
 
     bool use_relu;
 };

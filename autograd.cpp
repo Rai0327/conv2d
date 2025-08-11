@@ -34,7 +34,7 @@ torch::Tensor conv2d_relu_int8_forward(
     torch::Tensor out = torch::empty({batch_size, C_out, H_out, W_out}, torch::dtype(torch::kFloat32).device(in.device()));
 
     // Set up conv2d structure
-    conv2d conv;
+    conv2d conv{};
     conv.C_in = C_in;
     conv.C_out = C_out;
     conv.H_in = H_in;
@@ -87,7 +87,7 @@ torch::Tensor conv2d_relu_int8_input_backward(
     torch::Tensor grad_in = torch::empty({batch_size, C_in, H_in, W_in}, torch::dtype(torch::kFloat32).device(grad_out.device()));
 
     // Set up conv2d structure
-    conv2d conv;
+    conv2d conv{};
     conv.C_in = C_in;
     conv.C_out = C_out;
     conv.H_in = H_in;
@@ -130,7 +130,7 @@ torch::Tensor conv2d_relu_int8_weights_backward(
     torch::Tensor grad_weights = torch::empty({C_out, C_in, k_h, k_w}, torch::dtype(torch::kFloat32).device(in.device()));
 
     // Set up conv2d structure
-    conv2d conv;
+    conv2d conv{};
     conv.C_in = C_in;
     conv.C_out = C_out;
     conv.H_in = H_in;

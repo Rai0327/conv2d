@@ -142,8 +142,6 @@ __global__ void backward_weights_kernel(
     }
 
     int weight_idx = ((c_out * conv.C_in + c_in) * conv.k_h + h) * conv.k_w + w;
-    int total_weights = conv.C_out * conv.C_in * conv.k_h * conv.k_w;
-    assert(weight_idx < total_weights);
     grad_weights[weight_idx] = acc;
 }
 
