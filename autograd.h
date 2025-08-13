@@ -12,7 +12,7 @@ torch::Tensor conv2d_relu_int8_forward(
     int padding,
     int dilation,
     float x_scale, int x_zp,
-    torch::Tensor w_scale, torch::Tensor w_zp,
+    const torch::Tensor w_scale, const torch::Tensor w_zp,
     bool use_relu
 );
 
@@ -20,7 +20,7 @@ torch::Tensor conv2d_relu_int8_input_backward(
     const torch::Tensor grad_out,
     const torch::Tensor weights,
     int stride, int padding, int dilation,
-    torch::Tensor w_scale, torch::Tensor w_zp,
+    const torch::Tensor w_scale, const torch::Tensor w_zp,
     int H_in, int W_in
 );
 

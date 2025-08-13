@@ -18,39 +18,56 @@ __device__ inline float relu(float x) {
     return x > 0 ? x : 0;
 }
 
+inline __host__ __device__ long long ceil_div_ll(long long a, long long b) {
+    return (a + b - 1) / b;
+}
+
+__host__ __device__ __forceinline__ int div_floor(int a, int b) {
+  int q = a / b, r = a % b;
+  if (r != 0 && ((r > 0) != (b > 0))) --q;
+  return q;
+}
+__host__ __device__ __forceinline__ int div_ceil(int a, int b) {
+  int q = a / b, r = a % b;
+  if (r != 0 && ((r > 0) == (b > 0))) ++q;
+  return q;
+}
+
+constexpr int BLOCK = 256;
+
 __global__ void forward_kernel(
     const int8_t* __restrict__ in,
     float* __restrict__ out,
-    const conv2d& conv
+    const conv2d conv
 ) {
-    int pos_out = blockIdx.x * blockDim.x + threadIdx.x; // calculate position in output array
+    long long idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int w_out = idx % conv.W_out;
+    idx /= conv.W_out;
+    int h_out = idx % conv.H_out;
+    idx /= conv.H_out;
+    int c_out = idx % conv.C_out;
+    int batch = idx / conv.C_out;
 
-    if (pos_out >= conv.H_out * conv.W_out) {
-        return; // out of bounds
-    }
+    int kh_min = max(0, (conv.padding - h_out * conv.stride + conv.dilation - 1) / conv.dilation);
+    int kh_max = min(conv.k_h, (conv.padding + conv.H_in - 1 - h_out * conv.stride) / conv.dilation + 1);
+    int kw_min = max(0, (conv.padding - w_out * conv.stride + conv.dilation - 1) / conv.dilation);
+    int kw_max = min(conv.k_w, (conv.padding + conv.W_in - 1 - w_out * conv.stride) / conv.dilation + 1);
 
-    int c_out = blockIdx.y;
-    int batch = blockIdx.z;
-
-    int h_out = pos_out / conv.W_out; // calculate output h coordinate
-    int w_out = pos_out % conv.W_out; // calculate output w coordinate
+    int w_zp = conv.w_zp[c_out];
 
     int acc = 0; // accumulator
 
-    for (int c = 0; c < conv.C_in; c++) {
-        for (int h = 0; h < conv.k_h; h++) {
-            for (int w = 0; w < conv.k_w; w++) {
-                int h_in = h_out * conv.stride - conv.padding + h * conv.dilation;
-                int w_in = w_out * conv.stride - conv.padding + w * conv.dilation;
+    for (int c = 0; c < conv.C_in; ++c) {
+        for (int h = kh_min; h < kh_max; ++h) {
+            int h_in = h_out * conv.stride - conv.padding + h * conv.dilation;
+            const int8_t* x_row = in + ((batch * conv.C_in + c) * conv.H_in + h_in) * conv.W_in;
+            const int8_t* w_row = conv.weights + ((c_out * conv.C_in + c) * conv.k_h + h) * conv.k_w;
+            const int8_t* in_ptr = x_row + w_out * conv.stride - conv.padding + kw_min * conv.dilation;
 
-                if (h_in < 0 || h_in >= conv.H_in || w_in < 0 || w_in >= conv.W_in) {
-                    continue; // out of bounds
-                }
-                
-                int in_idx = ((batch * conv.C_in + c) * conv.H_in + h_in) * conv.W_in + w_in;
-                int weight_idx = ((c_out * conv.C_in + c) * conv.k_h + h) * conv.k_w + w;
-
-                acc += (((int) in[in_idx]) - conv.x_zp) * ((int) conv.weights[weight_idx] - conv.w_zp[c_out]);
+            #pragma unroll
+            for (int w = kw_min; w < kw_max; ++w) {
+                acc += (int(*in_ptr) - conv.x_zp) * (int(w_row[w]) - w_zp);
+                in_ptr += conv.dilation;
             }
         }
     }
@@ -66,38 +83,51 @@ __global__ void backward_input_kernel(
     const int8_t* __restrict__ weights, 
     const conv2d conv
 ) {
-    int w_in = blockIdx.x * blockDim.x + threadIdx.x;
-    int h_in = blockIdx.y * blockDim.y + threadIdx.y;
-    int c_in = blockIdx.z % conv.C_in;
-    int batch = blockIdx.z / conv.C_in;
+    long long idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int w_in = idx % conv.W_in;
+    idx /= conv.W_in;
+    int h_in = idx % conv.H_in;
+    idx /= conv.H_in;
+    int c_in = idx % conv.C_in;
+    int batch = idx / conv.C_in;
 
-    if (w_in >= conv.W_in || h_in >= conv.H_in || c_in >= conv.C_in) {
-        return; // out of bounds
-    }
+    const int kh_min = max(0, div_ceil(h_in + conv.padding - (conv.H_out - 1) * conv.stride, conv.dilation));
+    const int kh_max = min(conv.k_h - 1, div_floor(h_in + conv.padding, conv.dilation));
+    const int kw_min = max(0, div_ceil(w_in + conv.padding - (conv.W_out - 1) * conv.stride, conv.dilation));
+    const int kw_max = min(conv.k_w - 1, div_floor(w_in + conv.padding, conv.dilation));
 
     float acc = 0.0f;
 
-    for (int c = 0; c < conv.C_out; c++) {
-        for (int h = 0; h < conv.k_h; h++) {
-            for (int w = 0; w < conv.k_w; w++) {
-                int h_out = h_in + conv.padding - h * conv.dilation;
+    for (int c = 0; c < conv.C_out; ++c) {
+        const float*  __restrict__ grad_out_base = grad_out + ((batch * conv.C_out + c) * conv.H_out) * conv.W_out;
+        const int8_t* __restrict__ weights_base = weights + ((c * conv.C_in + c_in) * conv.k_h) * conv.k_w;
+        int w_zp = conv.w_zp[c];
+        float w_scale = conv.w_scale[c];
+        for (int h = kh_min; h <= kh_max; ++h) {
+            int h_out = h_in + conv.padding - h * conv.dilation;
+            if (h_out % conv.stride) {
+                continue; // skip if not aligned with stride
+            }
+            h_out /= conv.stride;
+            if (h_out < 0 || h_out >= conv.H_out) {
+                continue; // out of bounds
+            }
+
+            const float*  __restrict__ grad_out_row = grad_out_base + h_out * conv.W_out;
+            const int8_t* __restrict__ weights_row  = weights_base + h * conv.k_w;
+
+            #pragma unroll 1
+            for (int w = kw_min; w <= kw_max; ++w) {
                 int w_out = w_in + conv.padding - w * conv.dilation;
-
-                if (h_out % conv.stride != 0 || w_out % conv.stride != 0) {
-                    continue;
+                if (w_out % conv.stride) {
+                    continue; // skip if not aligned with stride
                 }
-
-                h_out /= conv.stride;
                 w_out /= conv.stride;
-
-                if (h_out < 0 || h_out >= conv.H_out || w_out < 0 || w_out >= conv.W_out) {
+                if (w_out < 0 || w_out >= conv.W_out) {
                     continue; // out of bounds
                 }
 
-                int out_idx = ((batch * conv.C_out + c) * conv.H_out + h_out) * conv.W_out + w_out;
-                int weight_idx = ((c * conv.C_in + c_in) * conv.k_h + h) * conv.k_w + w;
-
-                acc += grad_out[out_idx] * (float) (weights[weight_idx] - conv.w_zp[c]) * conv.w_scale[c];
+                acc += grad_out_row[w_out] * (float)(weights_row[w] - w_zp) * w_scale;
             }
         }
     }
@@ -112,31 +142,39 @@ __global__ void backward_weights_kernel(
     float* __restrict__ grad_weights, 
     const conv2d conv
 ) {
-    int w = threadIdx.x + blockIdx.x * blockDim.x;
-    int h = threadIdx.y + blockIdx.y * blockDim.y;
-    int c_out = blockIdx.z / conv.C_in;
-    int c_in  = blockIdx.z % conv.C_in;
+    long long idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int w = idx % conv.k_w;
+    idx /= conv.k_w;
+    int h = idx % conv.k_h;
+    idx /= conv.k_h;
+    int c_out = idx % conv.C_out;
+    int c_in = idx / conv.C_out;
 
     if (w >= conv.k_w || h >= conv.k_h || c_out >= conv.C_out || c_in >= conv.C_in) {
         return; // out of bounds
     }
 
+    const int kh_diff = h * conv.dilation - conv.padding;
+    const int kw_diff = w * conv.dilation - conv.padding;
+    int h_out_min = max(0, div_ceil(-kh_diff, conv.stride));
+    int h_out_max = min(conv.H_out - 1, div_floor(conv.H_in - 1 - kh_diff, conv.stride));
+    int w_out_min = max(0, div_ceil(-kw_diff, conv.stride));
+    int w_out_max = min(conv.W_out - 1, div_floor(conv.W_in - 1 - kw_diff, conv.stride));
+
     float acc = 0.0f;
 
-    for (int b = 0; b < conv.batch_size; b++) {
-        for (int h_out = 0; h_out < conv.H_out; h_out++) {
-            for (int w_out = 0; w_out < conv.W_out; w_out++) {
-                int h_in = h_out * conv.stride - conv.padding + h * conv.dilation;
-                int w_in = w_out * conv.stride - conv.padding + w * conv.dilation;
+    for (int b = 0; b < conv.batch_size; ++b) {
+        const float*  __restrict__ grad_out_base = grad_out + ((b * conv.C_out + c_out) * conv.H_out) * conv.W_out;
+        const int8_t* __restrict__ in_base = in + ((b * conv.C_in + c_in) * conv.H_in) * conv.W_in;
+        for (int h_out = h_out_min; h_out <= h_out_max; ++h_out) {
+            const int h_in = h_out * conv.stride + kh_diff;
+            const float*  __restrict__ grad_out_row = grad_out_base + h_out * conv.W_out + w_out_min;
+            const int8_t* __restrict__ in_row  = in_base + h_in  * conv.W_in + (w_out_min * conv.stride + kw_diff);
 
-                if (h_in < 0 || h_in >= conv.H_in || w_in < 0 || w_in >= conv.W_in) {
-                    continue; // out of bounds
-                }
-
-                int in_idx = ((b * conv.C_in + c_in) * conv.H_in + h_in) * conv.W_in + w_in;
-                int out_idx = ((b * conv.C_out + c_out) * conv.H_out + h_out) * conv.W_out + w_out;
-
-                acc += grad_out[out_idx] * (float) (in[in_idx] - conv.x_zp) * conv.x_scale;
+            #pragma unroll 4
+            for (int w_out = w_out_min; w_out <= w_out_max; ++w_out) {
+                acc += (*(grad_out_row++)) * ((float) ((int) (*in_row) - conv.x_zp)) * conv.x_scale;
+                in_row += conv.stride;
             }
         }
     }
@@ -150,74 +188,17 @@ void launch_forward_kernel(
     float* out,
     const conv2d& conv
 ) {
-    // sizes
-    int in_size = conv.C_in * conv.H_in * conv.W_in * conv.batch_size;
-    int out_size = conv.C_out * conv.H_out * conv.W_out * conv.batch_size;
-    int weights_size = conv.C_out * conv.C_in * conv.k_h * conv.k_w;
-    int bias_size = conv.C_out;
-    int w_scale_size = conv.C_out;
-    int w_zp_size = conv.C_out;
-
-    // GPU memory allocation
-    int8_t* kernel_in, *kernel_weights;
-    float* kernel_out, *kernel_bias, *kernel_w_scale;
-    int* kernel_w_zp;
-    conv2d* kernel_conv;
-
-    ERROR_CHECK(cudaMalloc(&kernel_in, in_size * sizeof(int8_t)));
-    ERROR_CHECK(cudaMalloc(&kernel_out, out_size * sizeof(float)));
-    ERROR_CHECK(cudaMalloc(&kernel_weights, weights_size * sizeof(int8_t)));
-    if (conv.bias) {
-        ERROR_CHECK(cudaMalloc(&kernel_bias, bias_size * sizeof(float)));
-    }
-    ERROR_CHECK(cudaMalloc(&kernel_w_scale, w_scale_size * sizeof(float)));
-    ERROR_CHECK(cudaMalloc(&kernel_w_zp, w_zp_size * sizeof(int)));
-    ERROR_CHECK(cudaMalloc(&kernel_conv, sizeof(conv2d)));
-
     // Get current CUDA stream
     cudaStream_t curr_stream = at::cuda::getCurrentCUDAStream();
+    
+    long long N = 1LL * conv.batch_size * conv.C_out * conv.H_out * conv.W_out;
+    dim3 blockDim(BLOCK, 1, 1);
+    dim3 gridDim(ceil_div_ll(N, BLOCK), 1, 1);
 
-    // Copy input, weights, and bias to GPU
-    ERROR_CHECK(cudaMemcpyAsync(kernel_in, in, in_size * sizeof(int8_t), cudaMemcpyHostToDevice, curr_stream));
-    ERROR_CHECK(cudaMemcpyAsync(kernel_weights, conv.weights, weights_size * sizeof(int8_t), cudaMemcpyHostToDevice, curr_stream));
-    if (conv.bias) {
-        ERROR_CHECK(cudaMemcpyAsync(kernel_bias, conv.bias, bias_size * sizeof(float), cudaMemcpyHostToDevice, curr_stream));
-    } else {
-        kernel_bias = nullptr;
-    }
-    ERROR_CHECK(cudaMemcpyAsync(kernel_w_scale, conv.w_scale, w_scale_size * sizeof(float), cudaMemcpyHostToDevice, curr_stream));
-    ERROR_CHECK(cudaMemcpyAsync(kernel_w_zp, conv.w_zp, w_zp_size * sizeof(int), cudaMemcpyHostToDevice, curr_stream));
+    forward_kernel<<<gridDim, blockDim, 0, curr_stream>>>(in, out, conv);
 
-    // Copy conv to GPU
-    conv2d conv_copy = conv;
-    conv_copy.weights = kernel_weights;
-    conv_copy.bias = kernel_bias;
-    conv_copy.w_scale = kernel_w_scale;
-    conv_copy.w_zp = kernel_w_zp;
-    ERROR_CHECK(cudaMemcpyAsync(kernel_conv, &conv_copy, sizeof(conv2d), cudaMemcpyHostToDevice, curr_stream));
-
-    // Launch kernel
-    int block_dim = 256; // Number of threads per block
-    dim3 blockDim(block_dim);
-    dim3 gridDim((conv.H_out * conv.W_out + block_dim - 1) / block_dim, conv.C_out, conv.batch_size); // equivalent to ceil(H_out * W_out / block_dim)
-    forward_kernel<<<gridDim, blockDim, 0, curr_stream>>>(kernel_in, kernel_out, *kernel_conv);
-
-    // Copy output
-    ERROR_CHECK(cudaMemcpyAsync(out, kernel_out, out_size * sizeof(float), cudaMemcpyDeviceToDevice, curr_stream));
-
-    // Free GPU memory
-    ERROR_CHECK(cudaFree(kernel_in));
-    ERROR_CHECK(cudaFree(kernel_out));
-    ERROR_CHECK(cudaFree(kernel_weights));
-    if (conv.bias) {
-        ERROR_CHECK(cudaFree(kernel_bias));
-    }
-    ERROR_CHECK(cudaFree(kernel_w_scale));
-    ERROR_CHECK(cudaFree(kernel_w_zp));
-    ERROR_CHECK(cudaFree(kernel_conv));
-
-    // Synchronize
-    ERROR_CHECK(cudaStreamSynchronize(curr_stream));
+    // Check for kernel error
+    ERROR_CHECK(cudaGetLastError());
 }
 
 void launch_backward_input_kernel(
@@ -234,10 +215,10 @@ void launch_backward_input_kernel(
     cudaStream_t curr_stream = at::cuda::getCurrentCUDAStream();
 
     // Launch kernel
-    int block_x = 16;
-    int block_y = 16;
-    dim3 blockDim(block_x, block_y);
-    dim3 gridDim((conv.W_in + block_x - 1) / block_x, (conv.H_in + block_y - 1) / block_y, conv.C_in * conv.batch_size);
+    long long N = 1LL * conv.batch_size * conv.C_in * conv.H_in * conv.W_in;
+    dim3 blockDim(BLOCK, 1, 1);
+    dim3 gridDim(ceil_div_ll(N, BLOCK), 1, 1);
+
     backward_input_kernel<<<gridDim, blockDim, 0, curr_stream>>>(kernel_grad_in, kernel_grad_out, kernel_weights, conv);
 
     // Check for kernel error
@@ -258,10 +239,10 @@ void launch_backward_weights_kernel(
     cudaStream_t curr_stream = at::cuda::getCurrentCUDAStream();
 
     // Launch kernel
-    int block_x = 16;
-    int block_y = 16;
-    dim3 blockDim(block_x, block_y);
-    dim3 gridDim((conv.k_w + block_x - 1) / block_x, (conv.k_h + block_y - 1) / block_y, conv.C_out * conv.C_in);
+    long long N = 1LL * conv.C_out * conv.C_in * conv.k_h * conv.k_w;
+    dim3 blockDim(BLOCK, 1, 1);
+    dim3 gridDim(ceil_div_ll(N, BLOCK), 1, 1);
+    
     backward_weights_kernel<<<gridDim, blockDim, 0, curr_stream>>>(kernel_in, kernel_grad_out, kernel_grad_weights, conv);
 
     // Check for kernel error
