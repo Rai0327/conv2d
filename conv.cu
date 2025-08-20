@@ -3,16 +3,19 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <iostream>
+#include <climits>
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 
-#define ERROR_CHECK(err) \
-    if (err != cudaSuccess) { \
-        std::cerr << "CUDA Error: " << cudaGetErrorString(err) \
-                  << " at " << __FILE__ << ":" << __LINE__ << std::endl; \
-        std::exit(EXIT_FAILURE); \
-    }
-
+#define ERROR_CHECK(call)                                                     \
+  do {                                                                       \
+    cudaError_t _err = (call);                                               \
+    if (_err != cudaSuccess) {                                               \
+      fprintf(stderr, "CUDA Error: %s at %s:%d\n",                           \
+              cudaGetErrorString(_err), __FILE__, __LINE__);                 \
+      std::abort();                                                          \
+    }                                                                        \
+  } while (0)
 
 __device__ inline float relu(float x) {
     return x > 0 ? x : 0;
@@ -23,14 +26,21 @@ inline __host__ __device__ long long ceil_div_ll(long long a, long long b) {
 }
 
 __host__ __device__ __forceinline__ int div_floor(int a, int b) {
-  int q = a / b, r = a % b;
-  if (r != 0 && ((r > 0) != (b > 0))) --q;
-  return q;
+    // if div by 0, return a large positive value
+    if (b == 0) return INT_MAX / 4;
+
+    int q = a / b;
+    int r = a - q * b;
+    return q - ((r != 0) && ((r < 0) ^ (b < 0)));
 }
+
 __host__ __device__ __forceinline__ int div_ceil(int a, int b) {
-  int q = a / b, r = a % b;
-  if (r != 0 && ((r > 0) == (b > 0))) ++q;
-  return q;
+    // if div by 0, return a large negative value
+    if (b == 0) return INT_MIN / 4;
+
+    int q = a / b;
+    int r = a - q * b;
+    return q + ((r != 0) && ((r > 0) ^ (b < 0)));
 }
 
 constexpr int BLOCK = 256;
@@ -41,6 +51,7 @@ __global__ void forward_kernel(
     const conv2d conv
 ) {
     long long idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= 1LL * conv.batch_size * conv.C_out * conv.H_out * conv.W_out) return;
     int w_out = idx % conv.W_out;
     idx /= conv.W_out;
     int h_out = idx % conv.H_out;
@@ -48,10 +59,10 @@ __global__ void forward_kernel(
     int c_out = idx % conv.C_out;
     int batch = idx / conv.C_out;
 
-    int kh_min = max(0, (conv.padding - h_out * conv.stride + conv.dilation - 1) / conv.dilation);
-    int kh_max = min(conv.k_h, (conv.padding + conv.H_in - 1 - h_out * conv.stride) / conv.dilation + 1);
-    int kw_min = max(0, (conv.padding - w_out * conv.stride + conv.dilation - 1) / conv.dilation);
-    int kw_max = min(conv.k_w, (conv.padding + conv.W_in - 1 - w_out * conv.stride) / conv.dilation + 1);
+    int kh_min = max(0, div_ceil(conv.padding - h_out * conv.stride, conv.dilation));
+    int kh_max = min(conv.k_h, div_floor(conv.padding + conv.H_in - 1 - h_out * conv.stride, conv.dilation) + 1);
+    int kw_min = max(0, div_ceil(conv.padding - w_out * conv.stride, conv.dilation));
+    int kw_max = min(conv.k_w, div_floor(conv.padding + conv.W_in - 1 - w_out * conv.stride, conv.dilation) + 1);
 
     int w_zp = conv.w_zp[c_out];
 
