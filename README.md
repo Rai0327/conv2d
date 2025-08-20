@@ -64,7 +64,7 @@ Our quantization mapping for an input or weight value $$x \in \mathbb{R}$$ can b
 
 $$q = \text{clamp}(\text{truncate}(\frac{x}{s} + \text{zp}), -128, 127)$$
 
-where $q$ is the quantized output, $s$ is the quantization scale, and $\text{zp}$ is the quantization zero point.
+where $q$ is the quantized output, $s$ is the quantization scale, and $\text{zp}$ is the quantization zero point. We clamp at the -128 and 127 bounds as those are the signed 8-bit integer limits.
 
 Dequantization is achieved by performing the approximate inverse function:
 
