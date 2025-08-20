@@ -1,6 +1,6 @@
 import torch
 import random as ran
-from conv import QuantizedConv2dReLU, TorchConv2dReLU
+from conv import QuantizedConv2d, TorchConv2d
 
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
@@ -9,9 +9,9 @@ torch.use_deterministic_algorithms(True)
 ran.seed(0)
 
 
-def test_9():
+def test_6():
     """
-    Test non-contiguous inputs
+    Verify bias grad correctness with standard PyTorch implementation
     """
 
     H = ran.randint(8, 256) # height
@@ -31,40 +31,34 @@ def test_9():
     s_max_h = max(1, H + 2 * padding - k + 1)
     s_max_w = max(1, W + 2 * padding - k + 1)
     stride  = ran.randint(1, min(s_max_h, s_max_w)) # stride
-    bias = (ran.random() < 0.5)
 
-    quant_conv = QuantizedConv2dReLU(
+    # Test without ReLU
+    quant_conv = QuantizedConv2d(
         in_channels=C_in,
         out_channels=C_out,
         kernel_size=kernel_size,
         stride=stride,
         padding=padding,
         dilation=dilation,
-        bias=bias
+        bias=True
     ).cuda()
 
-    torch_conv = TorchConv2dReLU(
+    torch_conv = TorchConv2d(
         in_channels=C_in,
         out_channels=C_out,
         kernel_size=kernel_size,
         stride=stride,
         padding=padding,
         dilation=dilation,
-        bias=bias
+        bias=True
     ).cuda()
 
     with torch.no_grad():
         quant_conv.weight.copy_(torch_conv.conv.weight)
-        if bias:
-            quant_conv.bias.copy_(torch_conv.conv.bias)
+        quant_conv.bias.copy_(torch_conv.conv.bias)
 
-    quant_base = torch.randn(B, C_in, H, W, device='cuda', requires_grad=True)
-    torch_base = quant_base.clone()
-    quant_x = quant_base.transpose(2, 3).detach().requires_grad_(True)
-    torch_x  = torch_base.transpose(2, 3).detach().requires_grad_(True)
-
-    assert not quant_x.is_contiguous()
-    assert not torch_x.is_contiguous()
+    quant_x = torch.randn(B, C_in, H, W, device='cuda', requires_grad=True)
+    torch_x = quant_x.detach().clone().requires_grad_(True)
 
     # Forward pass
     quant_y = quant_conv(quant_x)
@@ -76,21 +70,12 @@ def test_9():
     torch_loss = torch_y.sum()
     torch_loss.backward()
 
-    # Verify all finite values
-    assert(quant_x.isfinite().all().item())
-    assert(quant_x.grad.isfinite().all().item())
-    assert(quant_conv.weight.grad.isfinite().all().item())
-    if bias:
-        assert(quant_conv.bias.grad.isfinite().all().item())
-
-    # Verify correctness
-    torch.testing.assert_close(quant_y, torch_y, rtol=1e-2, atol=5e-2)
-    torch.testing.assert_close(quant_x.grad, torch_x.grad, rtol=5e-2, atol=5e-1)
+    torch.testing.assert_close(quant_conv.bias.grad, torch_conv.conv.bias.grad, rtol=1e-2, atol=1e-2)
 
     del quant_conv, torch_conv, quant_x, torch_x, quant_y, torch_y, quant_loss, torch_loss
     torch.cuda.empty_cache()
 
 for i in range(50):
-    test_9()
+    test_6()
 
-print("Successfully passed test 9!")
+print("Successfully passed test 6!")

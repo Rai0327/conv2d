@@ -1,5 +1,5 @@
 torch
-numpy
 ninja
 torchvision
-setuptools
+tqdm
+wandb

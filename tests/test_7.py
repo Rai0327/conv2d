@@ -1,6 +1,6 @@
 import torch
 import random as ran
-from conv import QuantizedConv2dReLU, TorchConv2dReLU
+from conv import QuantizedConv2dReLU
 
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
@@ -9,9 +9,9 @@ torch.use_deterministic_algorithms(True)
 ran.seed(0)
 
 
-def test_9():
+def test_7():
     """
-    Test non-contiguous inputs
+    Check for undefined values in outputs and grads
     """
 
     H = ran.randint(8, 256) # height
@@ -43,54 +43,26 @@ def test_9():
         bias=bias
     ).cuda()
 
-    torch_conv = TorchConv2dReLU(
-        in_channels=C_in,
-        out_channels=C_out,
-        kernel_size=kernel_size,
-        stride=stride,
-        padding=padding,
-        dilation=dilation,
-        bias=bias
-    ).cuda()
-
-    with torch.no_grad():
-        quant_conv.weight.copy_(torch_conv.conv.weight)
-        if bias:
-            quant_conv.bias.copy_(torch_conv.conv.bias)
-
-    quant_base = torch.randn(B, C_in, H, W, device='cuda', requires_grad=True)
-    torch_base = quant_base.clone()
-    quant_x = quant_base.transpose(2, 3).detach().requires_grad_(True)
-    torch_x  = torch_base.transpose(2, 3).detach().requires_grad_(True)
-
-    assert not quant_x.is_contiguous()
-    assert not torch_x.is_contiguous()
+    quant_x = torch.randn(B, C_in, H, W, device='cuda', requires_grad=True)
 
     # Forward pass
     quant_y = quant_conv(quant_x)
-    torch_y = torch_conv(torch_x)
+
+    assert(quant_x.isfinite().all().item())
 
     # Backward pass
     quant_loss = quant_y.sum()
     quant_loss.backward()
-    torch_loss = torch_y.sum()
-    torch_loss.backward()
 
-    # Verify all finite values
-    assert(quant_x.isfinite().all().item())
     assert(quant_x.grad.isfinite().all().item())
     assert(quant_conv.weight.grad.isfinite().all().item())
     if bias:
         assert(quant_conv.bias.grad.isfinite().all().item())
 
-    # Verify correctness
-    torch.testing.assert_close(quant_y, torch_y, rtol=1e-2, atol=5e-2)
-    torch.testing.assert_close(quant_x.grad, torch_x.grad, rtol=5e-2, atol=5e-1)
-
-    del quant_conv, torch_conv, quant_x, torch_x, quant_y, torch_y, quant_loss, torch_loss
+    del quant_conv, quant_x, quant_y, quant_loss
     torch.cuda.empty_cache()
 
 for i in range(50):
-    test_9()
+    test_7()
 
-print("Successfully passed test 9!")
+print("Successfully passed test 7!")

@@ -1,8 +1,8 @@
-import os
+# import os
 # Adjust environment variables for compilation
-os.environ["CC"] = "/usr/bin/gcc-10"
-os.environ["CXX"] = "/usr/bin/g++-10"
-os.environ['CUDA_HOME'] = '/usr/local/cuda-12.1'
+# os.environ["CC"] = "/usr/bin/gcc-10"
+# os.environ["CXX"] = "/usr/bin/g++-10"
+# os.environ['CUDA_HOME'] = '/usr/local/cuda-12.1'
 
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
@@ -18,11 +18,11 @@ setup(
                 'conv.cu',
             ],
             extra_compile_args={
-                'cxx': ['-O3'],
+                'cxx': ['-O3', '-Wno-array-bounds', '-Wno-stringop-overflow'],
                 'nvcc': [
                     '-O3',
                     '--use_fast_math',
-                    '-gencode=arch=compute_61,code=sm_61', # Adjust based on your GPU architecture
+                    '-gencode=arch=compute_120,code=sm_120', # Adjust based on your GPU architecture
                 ]
             }
         )
