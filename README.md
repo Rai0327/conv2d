@@ -94,11 +94,28 @@ To optimize this logic, when computing an output element our forward kernel uses
 
 #### Input Gradient
 
+The derivation of the input gradient given a weight $W$ and output gradient w.r.t. output $y$ is:
 
+$$\frac{\partial L}{\partial X_{c, h, w}} = \sum_{c_{\text{out}}=0}^{C_{\text{out}} - 1} \sum_{r=0}^{k_{h} - 1} \sum_{s=0}^{k_{w} - 1} \frac{\partial L}{\partial y_{c_{\text{out}}, \, h-r, \, w-s}} \cdot W_{c_{\text{out}}, c, r, s}$$
+
+where $C\_{\text{out}}$ is the number of output channels, $k\_{h}$ is the kernel height, and $k\_{w}$ is the kernel width.
+
+To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the output gradient and weight rows' base pointers and advance by stride and dilation. At each point, we subtract input and weight zero points and accumulate in a float. We scale the accumulation once separately for each channel as the computation is mathematically equivalent to dequantizing at each accumulation.
 
 #### Weight Gradient
 
+The derivation of the weight gradient given an input $X$ and output gradient w.r.t. output $y$ is:
 
+$$\frac{\partial L}{\partial W_{c_{\text{out}}, c, r, s}} = \sum_{b=0}^{B-1} \sum_{h=0}^{H_{\text{out}}-1} \sum_{w=0}^{W_{\text{out}}-1} \frac{\partial L}{\partial y_{c_{\text{out}}, h, w}} \cdot X_{b, c, \, h+r, \, w+s}$$
+
+where $B$ is the batch size, $H_{\text{out}}$ is the output height, and $W_{\text{out}}$ is the output width.
+
+To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the output gradient and input rows' base pointers and walk the pointers down the columns according to the stride parameter. At each point, we subtract input and weight zero points and accumulate in a float. We scale the accumulation once at the end as the computation is mathematically equivalent to dequantizing at each accumulation.
 
 #### Bias Gradient
 
+The derivation of the bias gradient given an output gradient w.r.t. output $y$ is:
+
+$$\frac{\partial L}{\partial B_{c_{\text{out}}}} = \sum_{b=0}^{B-1} \sum_{h=0}^{H_{\text{out}}-1} \sum_{w=0}^{W_{\text{out}}-1} \frac{\partial L}{\partial y_{c_{\text{out}}, h, w}}$$
+
+where $B$ is the batch size, $H_{\text{out}}$ is the output height, and $W_{\text{out}}$ is the output width.
