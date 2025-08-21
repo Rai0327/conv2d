@@ -1,9 +1,3 @@
-# import os
-# Adjust environment variables for compilation
-# os.environ["CC"] = "/usr/bin/gcc-10"
-# os.environ["CXX"] = "/usr/bin/g++-10"
-# os.environ['CUDA_HOME'] = '/usr/local/cuda-12.1'
-
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
