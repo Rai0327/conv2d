@@ -112,8 +112,7 @@ __global__ void backward_input_kernel(
     for (int c = 0; c < conv.C_out; ++c) {
         const float*  __restrict__ grad_out_base = grad_out + ((batch * conv.C_out + c) * conv.H_out) * conv.W_out;
         const int8_t* __restrict__ weights_base = weights + ((c * conv.C_in + c_in) * conv.k_h) * conv.k_w;
-        int w_zp = conv.w_zp[c];
-        float w_scale = conv.w_scale[c];
+        float c_acc = 0.0f;
         for (int h = kh_min; h <= kh_max; ++h) {
             int h_out = h_in + conv.padding - h * conv.dilation;
             if (h_out % conv.stride) {
@@ -137,10 +136,10 @@ __global__ void backward_input_kernel(
                 if (w_out < 0 || w_out >= conv.W_out) {
                     continue; // out of bounds
                 }
-
-                acc += grad_out_row[w_out] * (float)(weights_row[w] - w_zp) * w_scale;
+                c_acc += grad_out_row[w_out] * (float) (weights_row[w] - conv.w_zp[c]);
             }
         }
+        acc += c_acc * conv.w_scale[c];
     }
 
     int in_idx = ((batch * conv.C_in + c_in) * conv.H_in + h_in) * conv.W_in + w_in;
@@ -184,14 +183,14 @@ __global__ void backward_weights_kernel(
 
             #pragma unroll 4
             for (int w_out = w_out_min; w_out <= w_out_max; ++w_out) {
-                acc += (*(grad_out_row++)) * ((float) ((int) (*in_row) - conv.x_zp)) * conv.x_scale;
+                acc += (*(grad_out_row++)) * ((float) ((int) (*in_row) - conv.x_zp));
                 in_row += conv.stride;
             }
         }
     }
 
     int weight_idx = ((c_out * conv.C_in + c_in) * conv.k_h + h) * conv.k_w + w;
-    grad_weights[weight_idx] = acc;
+    grad_weights[weight_idx] = acc * conv.x_scale;
 }
 
 void launch_forward_kernel(
