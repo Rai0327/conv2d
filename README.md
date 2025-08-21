@@ -5,12 +5,12 @@ This repository contains my implementation of a fused int8 quantized 2d convolut
 ## Requirements
 
 This project was tested with:
-- Python 3.13
-- CUDA toolkit 12.9
-- GCC 13
-- SM arch 89
+- Python 3.13+
+- CUDA toolkit 12.9+
+- GCC 13+
+- SM arch 89+
 
-Run `pip install requirements.txt` to install the necessary python libraries for the test cases and VGG16 model implementation + training.
+NOTE: this project can run with lower compatible requirements, make necessary changes to setup.py configuration. Run `pip install requirements.txt` to install the necessary python libraries for the test cases and VGG16 model implementation + training.
 
 ## Build + Install
 
@@ -49,7 +49,7 @@ train_vgg.py          # training script for VGG16 model
 ## Background
 
 Convolutional neural networks are powerful deep learning models that rely on the 2D convolution operation. This operation slides a learnable filter across the input, performing element-wise multiplication and accumulation on the window to derive the output feature map. As this operation is heavily used in computer vision, it is vastly important to optimize its performance for efficient training and inference. We achieve this with optimized CUDA kernels that leverage powerful NVIDIA GPUs.
-
+https://chatgpt.com/codex/onboarding
 Activation functions are functions that modify the outputs of neurons and they are instrumental to neural networks' performance as they introduce non-linearity to the network, allowing it to learn much more complex behaviors. In our module, we fuse the ReLU activation function with our convolutional layer to reduce costly overhead.
 
 Quantization is the process of representing high-precision information in lower-precision formats. In our case, we map inputs and weights, which are usually represented at floating-point accuracy, to lower-bit (int8) integer formats. This allows us to maintain accuracy while reducing computational and memory costs.
@@ -70,13 +70,23 @@ Dequantization is achieved by performing the approximate inverse function:
 
 $$x \approx s \cdot (q - \text{zp})$$
 
-We use per-tensor input scales and zero points and per-channel weight scales and zero points. For both input and weight quantization, we use symmetric signed int8 activations, meaning that are scales and zero points for an input $x$ and weight $w$ are computed as:
+We use per-tensor input scales and zero points and per-channel weight scales and zero points. For both input and weight quantization, we use symmetric signed int8 activations, meaning that are scales and zero points for an input tensor $x$ and weight tensor $w$ are computed as:
 
-$$\text{zp}\_{x}, (\text{zp}\_{w})\_{c} = 0$$<br>
+$$\text{zp}\_{x}, \text{zp}\_{w\_{c}} = 0$$<br>
 $$s\_{x} = \frac{\text{max}(|x|)}{127}$$<br>
-$$(s\_{w})\_{c} = \frac{\text{max}(|w\_{c}|)}{127}$$
+$$s\_{w\_{c}} = \frac{\text{max}(|w\_{c}|)}{127}$$
 
-where $$\text{zp}\_{x}$$ is the input zero point, $$(\text{zp}\_{w})\_{c}$$ is the per-channel weight zero point, $$s\_{x}$$ is the input scale, and $$(s\_{w})\_{c}$$ is the per-channel weight scale.
+where $$\text{zp}\_{x}$$ is the input zero point, $$\text{zp}\_{w\_{c}}$$ is the per-channel weight zero point, $$s\_{x}$$ is the input scale, and $$s\_{w\_{c}}$$ is the per-channel weight scale.
 
 ### Forward Pass
+
+The convolution operation for an input tensor $X$, weight tensor $W$, and bias tensor $B$ is defined as:
+
+$$y\_{c\_{\text{out}}, h, w} = \sum\_{c=0}^{C\_{\text{in}} - 1} \sum\_{r=0}^{k\_{h} - 1} \sum\_{s=0}^{k\_{w} - 1} X\_{c, h+r, w+s} \cdot W\_{c\_{\text{out}}, c, r, s} + B\_{c\_{\text{out}}}$$
+
+where $C\_{\text{in}}$ is the number of input channels, $k\_{h}$ is the kernel height, and $k\_{w}$ is the kernel width.
+
+To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the input and weight rows' base pointers and walk the pointers down the columns according to the dilation parameter. At each point, we subtract input and weight zero points and accumulate in a 32-bit integer. We scale the accumulation once at the end as the computation is mathematically equivalent to dequantizing at each accumulation. Finally, we add the bias and apply the ReLU function.
+
+### Backward Pass
 
