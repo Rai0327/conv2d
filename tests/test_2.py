@@ -11,7 +11,7 @@ ran.seed(0)
 
 def test_2():
     """
-    Test all zero outputs and grads
+    Test all zero inputs and grads
     """
 
     H = ran.randint(8, 256) # height
