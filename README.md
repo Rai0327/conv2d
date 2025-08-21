@@ -1,16 +1,16 @@
-# Implementing Custom CUDA Quantized Conv2d + ReLU Module
+# Custom CUDA Quantized Conv2d + ReLU Module
 
-This repository contains my implementation of a fused int8 quantized 2d convolutional layer and ReLU activation function module along with correctness test cases comparing to the standard PyTorch implementation and an implementation of the VGG16 model architecture with my module. In my module I implement custom forward and backward CUDA kernels with autograd support.
+This repository implements a fused **int8 quantized** 2d convolutional layer and ReLU activation function module along with correctness test cases comparing to the standard PyTorch implementation and an implementation of the VGG16 model architecture with my module. In my module I implement custom forward and backward **CUDA** kernels with **autograd support**.
 
 ## Experiments
 
-Our module sees significant decreases in both RAM and VRAM memory usage compared to the standard PyTorch implementation while keeping output accuracy within a 0.05 absolute difference and 1% relative difference.
+Our module sees **significant decreases** in both RAM and VRAM memory usage compared to the standard PyTorch implementation while keeping outputs within a **0.05** absolute difference and **1%** relative difference of the PyTorch implementation.
 
-|Memory Type            |PyTorch|Ours  |% Decrease|
-|-----------------------|-------|------|----------|
-|Peak RAM (MB)          |943.69 |802.06|15.01%    |
-|Peak CUDA alloc (MB)   |590.42 |539.32|8.65%     |
-|Peak CUDA reserved (MB)|816.00 |590.00|27.70%    |
+|Memory Type            |PyTorch|Ours      |% Decrease|
+|-----------------------|-------|----------|----------|
+|Peak RAM (MB)          |943.69 |**802.06**|**15.01%**|
+|Peak CUDA alloc (MB)   |590.42 |**539.32**|**8.65%** |
+|Peak CUDA reserved (MB)|816.00 |**590.00**|**27.70%**|
 
 Output accuracy results taken from `tests/test_3.py` and memory results taken from `mem_check.py`.
 
@@ -20,11 +20,11 @@ This project was tested with:
 - Python 3.13+
 - CUDA toolkit 12.9+
 - GCC 13+
-- SM arch 89+
+- SM arch 120+
 
-Run `pip install requirements.txt` to install the necessary python libraries for the test cases and VGG16 model implementation + training.
+Run `pip install -r requirements.txt` to install the necessary python libraries for the test cases and VGG16 model implementation + training.
 
-NOTE: this project can run with lower compatible requirements, make necessary changes to `setup.py` configuration. 
+NOTE: For older versions and architectures, adjust `setup.py` accordingly.
 
 ## Build + Install
 
@@ -36,14 +36,23 @@ pip install -e .
 
 ## Quickstart
 
-After installation, a fused quantized conv2d and ReLU module can be imported from `conv.py` as
+After installation, a fused quantized conv2d and ReLU module with the same implementation as PyTorch's can be imported from `conv.py` as
 ```
 from conv import QuantizedConv2dReLU
+import torch
+
+conv = QuantizedConv2dReLU(3, 16, kernel_size=3)
+x = torch.randn(1, 3, 32, 32)
+y = conv(x)
+loss = y.sum()
+loss.backward()
 ```
 
 Additionally, we provide a `QuantizedConv2d` module without the fused ReLU activation function and these modules' PyTorch counterparts `TorchConv2dReLU` and `TorchConv2d` for comparison.
 
 ## Tests
+
+To run all test cases, run `bash run_tests.sh`.
 
 ```
 test_0.py              # Base test case
@@ -61,7 +70,7 @@ test_9.py              # Tests on non-contiguous inputs
 ## Repo Layout
 ```
 tests/                # directory containing test cases
-autograd.cpp          # intermediate between autograd.h and cuda.cu to compute paramteres
+autograd.cpp          # intermediate between autograd.h and cuda.cu to compute parameters
 autograd.h            # implements torch::autograd::Function class for autograd support
 bindings.cpp          # create Python bindings for C++ module
 conv.cu               # implements forward + backward kernels and their launchers
@@ -128,7 +137,7 @@ $$\frac{\partial L}{\partial X_{c, h, w}} = \sum_{c_{\text{out}}=0}^{C_{\text{ou
 
 where $C\_{\text{out}}$ is the number of output channels, $k\_{h}$ is the kernel height, and $k\_{w}$ is the kernel width.
 
-To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the output gradient and weight rows' base pointers and advance by stride and dilation. At each point, we subtract input and weight zero points and accumulate in a float. We scale the accumulation once separately for each channel as the computation is mathematically equivalent to dequantizing at each accumulation.
+To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the output gradient and weight rows' base pointers and advance by stride and dilation. At each point, we subtract the weight zero point and accumulate in a float. We scale the accumulation once separately for each channel as the computation is mathematically equivalent to dequantizing at each accumulation.
 
 #### Weight Gradient
 
@@ -138,7 +147,7 @@ $$\frac{\partial L}{\partial W_{c_{\text{out}}, c, r, s}} = \sum_{b=0}^{B-1} \su
 
 where $B$ is the batch size, $H_{\text{out}}$ is the output height, and $W_{\text{out}}$ is the output width.
 
-To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the output gradient and input rows' base pointers and walk the pointers down the columns according to the stride parameter. At each point, we subtract input and weight zero points and accumulate in a float. We scale the accumulation once at the end as the computation is mathematically equivalent to dequantizing at each accumulation.
+To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the output gradient and input rows' base pointers and walk the pointers down the columns according to the stride parameter. At each point, we subtract the input zero point and accumulate in a float. We scale the accumulation once at the end as the computation is mathematically equivalent to dequantizing at each accumulation.
 
 #### Bias Gradient
 
@@ -151,3 +160,4 @@ where $B$ is the batch size, $H_{\text{out}}$ is the output height, and $W_{\tex
 ## TODO
 
 - Implement CUTLASS convolution to speed up convolution operation
+- Add groups support
