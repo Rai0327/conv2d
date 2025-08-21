@@ -2,6 +2,18 @@
 
 This repository contains my implementation of a fused int8 quantized 2d convolutional layer and ReLU activation function module along with correctness test cases comparing to the standard PyTorch implementation and an implementation of the VGG16 model architecture with my module. In my module I implement custom forward and backward CUDA kernels with autograd support.
 
+## Experiments
+
+Our module sees significant decreases in both RAM and VRAM memory usage compared to the standard PyTorch implementation while keeping output accuracy within a 0.05 absolute difference and 1% relative difference.
+
+|Memory Type            |PyTorch|Ours  |% Decrease|
+|-----------------------|-------|------|----------|
+|Peak RAM (MB)          |943.69 |802.06|15.01%    |
+|Peak CUDA alloc (MB)   |590.42 |539.32|8.65%     |
+|Peak CUDA reserved (MB)|816.00 |590.00|27.70%    |
+
+Output accuracy results taken from `tests/test_3.py` and memory results taken from `mem_check.py`.
+
 ## Requirements
 
 This project was tested with:
@@ -31,6 +43,21 @@ from conv import QuantizedConv2dReLU
 
 Additionally, we provide a `QuantizedConv2d` module without the fused ReLU activation function and these modules' PyTorch counterparts `TorchConv2dReLU` and `TorchConv2d` for comparison.
 
+## Tests
+
+```
+test_0.py              # Base test case
+test_1.py              # Tests output shapes
+test_2.py              # Tests correctness on zeroed-out inputs and grads
+test_3.py              # Tests output correctness
+test_4.py              # Tests input grad correctness
+test_5.py              # Tests weight grad correctness
+test_6.py              # Tests bias grad correctness
+test_7.py              # Tests for undefined outputs and grads
+test_8.py              # Tests for no bias correctness
+test_9.py              # Tests on non-contiguous inputs
+```
+
 ## Repo Layout
 ```
 tests/                # directory containing test cases
@@ -40,6 +67,7 @@ bindings.cpp          # create Python bindings for C++ module
 conv.cu               # implements forward + backward kernels and their launchers
 conv.h                # conv2d struct to store module parameters
 conv.py               # Python wrapper classes
+mem_check.py          # Python test to evaluate memory usage of us vs. PyTorch
 quantized_vgg.py      # VGG16 model implementation using quantized conv2d + relu module
 requirements.txt      # required python libraries
 run_tests.sh          # bash script to run all test cases
@@ -119,3 +147,7 @@ The derivation of the bias gradient given an output gradient w.r.t. output $y$ i
 $$\frac{\partial L}{\partial B_{c_{\text{out}}}} = \sum_{b=0}^{B-1} \sum_{h=0}^{H_{\text{out}}-1} \sum_{w=0}^{W_{\text{out}}-1} \frac{\partial L}{\partial y_{c_{\text{out}}, h, w}}$$
 
 where $B$ is the batch size, $H_{\text{out}}$ is the output height, and $W_{\text{out}}$ is the output width.
+
+## TODO
+
+- Implement CUTLASS convolution to speed up convolution operation
