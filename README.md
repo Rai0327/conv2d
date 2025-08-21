@@ -10,7 +10,9 @@ This project was tested with:
 - GCC 13+
 - SM arch 89+
 
-NOTE: this project can run with lower compatible requirements, make necessary changes to setup.py configuration. Run `pip install requirements.txt` to install the necessary python libraries for the test cases and VGG16 model implementation + training.
+Run `pip install requirements.txt` to install the necessary python libraries for the test cases and VGG16 model implementation + training.
+
+NOTE: this project can run with lower compatible requirements, make necessary changes to `setup.py` configuration. 
 
 ## Build + Install
 
@@ -49,7 +51,7 @@ train_vgg.py          # training script for VGG16 model
 ## Background
 
 Convolutional neural networks are powerful deep learning models that rely on the 2D convolution operation. This operation slides a learnable filter across the input, performing element-wise multiplication and accumulation on the window to derive the output feature map. As this operation is heavily used in computer vision, it is vastly important to optimize its performance for efficient training and inference. We achieve this with optimized CUDA kernels that leverage powerful NVIDIA GPUs.
-https://chatgpt.com/codex/onboarding
+
 Activation functions are functions that modify the outputs of neurons and they are instrumental to neural networks' performance as they introduce non-linearity to the network, allowing it to learn much more complex behaviors. In our module, we fuse the ReLU activation function with our convolutional layer to reduce costly overhead.
 
 Quantization is the process of representing high-precision information in lower-precision formats. In our case, we map inputs and weights, which are usually represented at floating-point accuracy, to lower-bit (int8) integer formats. This allows us to maintain accuracy while reducing computational and memory costs.
@@ -89,4 +91,14 @@ where $C\_{\text{in}}$ is the number of input channels, $k\_{h}$ is the kernel h
 To optimize this logic, when computing an output element our forward kernel uses pointer arithmetic to start at the input and weight rows' base pointers and walk the pointers down the columns according to the dilation parameter. At each point, we subtract input and weight zero points and accumulate in a 32-bit integer. We scale the accumulation once at the end as the computation is mathematically equivalent to dequantizing at each accumulation. Finally, we add the bias and apply the ReLU function.
 
 ### Backward Pass
+
+#### Input Gradient
+
+
+
+#### Weight Gradient
+
+
+
+#### Bias Gradient
 
