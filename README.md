@@ -24,7 +24,7 @@ This project was tested with:
 
 Run `pip install -r requirements.txt` to install the necessary python libraries for the test cases and VGG16 model implementation + training.
 
-NOTE: For older versions and architectures, adjust `setup.py` accordingly.
+NOTE: For older versions and architectures, adjust `setup.py` and `requirements.txt` accordingly.
 
 ## Build + Install
 
